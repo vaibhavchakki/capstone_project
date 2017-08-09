@@ -9,7 +9,7 @@ from keras.utils import np_utils
 from keras.applications.vgg19 import VGG19
 from keras.applications.vgg16 import VGG16
 from keras.applications.inception_v3 import InceptionV3
-from keras.models import Model
+from keras.models import Model, model_from_json
 from keras.layers import Dense, GlobalAveragePooling2D, Dropout
 from keras.optimizers import Adam, SGD
 from PIL.ImageEnhance import Brightness, Color, Contrast, Sharpness
@@ -41,13 +41,11 @@ def zca_whitening(x, zca_epsilon = 1e-6):
     return x
 
 
-def pre_process_img(img, enable_zca = False,
+def pre_process_img(img_path, enable_zca = False,
                     enable_yuv = True,
                     training = False,
                     normalize = True,
                     target_size = (299, 299)):
-
-    img_path = '../capstone_project_data/train/{}.jpg'.format(img)
     x = image.load_img(img_path, target_size = target_size)
 
     if training:
@@ -92,7 +90,8 @@ def validation_generator(batch_size, test_data, test_label):
             img = test_data[index]
             label = test_label[index]
 
-            img = pre_process_img(img)
+            path = "../capstone_project_data/train/{}.jpg".format(img)
+            img = pre_process_img(img_path = path)
 
             x.append(img)
             y.append(label)
@@ -111,7 +110,8 @@ def training_generator(batch_size, train_data, train_label):
             img = train_data[index]
             label = train_label[index]
 
-            img = pre_process_img(img, training = True)
+            path = "../capstone_project_data/train/{}.jpg".format(img)
+            img = pre_process_img(img_path = path, training = True)
 
             x.append(img)
             y.append(label)
@@ -139,7 +139,10 @@ def get_model(num_classes):
 
 
 
-def train_model():
+def train_model(training = False):
+
+    if not training:
+        return
 
     df = pd.read_csv('../capstone_project_data/train_labels.csv')
     images = df['name'].values
@@ -175,7 +178,39 @@ def train_model():
     model.save_weights("model.h5", overwrite = True)
 
     print("Done!!!")
+    return
+
+
+def predict():
+    #
+    # First lets load the saved model
+    model = None
+    with open("model.json", "r") as jfile:
+        print("Loading model.json file")
+        model = model_from_json(json.loads(jfile.read()))
+
+    if model:
+        model.compile(loss = 'categorical_crossentropy', optimizer = Adam(lr=0.0001))
+        print("Loading model.h5 file")
+        model.load_weights("model.h5")
+        print("Done loading")
+    else:
+        return
+
+    df = pd.read_csv('../capstone_project_data/test.csv')
+    images = df['name'].values
+
+    for i in images:
+        path = "../capstone_project_data/test/{}.jpg".format(i)
+        img = pre_process_img(img_path = path)
+        result = model.predict(img[None, :, :, :], batch_size = 1)
+        df.loc[i, 'invasive'] = np.argmax(result)
+
+    df.to_csv('submission.csv', index=False)
+
+    return
 
 
 if __name__ == "__main__":
     train_model()
+    predict()
